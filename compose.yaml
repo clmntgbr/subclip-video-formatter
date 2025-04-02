@@ -1,0 +1,23 @@
+services:
+    video-formatter:
+        container_name: ${PROJECT_NAME}-video-formatter
+        env_file:
+            - .env.local
+        build:
+            dockerfile: ./Dockerfile
+            args:
+                SERVICE_PORT: 5000
+                SERVICE_NAME: video-formatter
+        restart: unless-stopped
+        networks:
+            - api_network
+        volumes:
+            - ./:/app
+        command: celery -A src.main.celery worker --loglevel=info --queues=video_formatter
+        ports:
+            - "5005:5000"
+
+networks:
+  api_network:
+    name: api_network
+    driver: bridge

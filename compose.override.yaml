@@ -1,0 +1,9 @@
+# Development environment override
+services:
+  video-formatter:
+      build:
+          dockerfile: ./Dockerfile
+          target: dev
+          args:
+              SERVICE_PORT: 5000
+              SERVICE_NAME: video-formatter
