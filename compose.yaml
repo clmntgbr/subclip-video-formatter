@@ -15,7 +15,7 @@ services:
             - ./:/app
         command: celery -A src.main.celery worker --loglevel=info --queues=video_formatter
         ports:
-            - "5005:5000"
+            - "5004:5000"
 
 networks:
   api_network:
