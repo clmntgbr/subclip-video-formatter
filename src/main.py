@@ -64,6 +64,12 @@ def process_message(message):
                 raise Exception()
             if not s3_client.upload_file(tmpProcessedVideoPath, keyProcessedVideo):
                 raise Exception()
+        
+        if clip.configuration.format == VideoFormatStyle.Name(VideoFormatStyle.NORMAL_916_WITH_BORDERS):
+            if not convert_normal_916_with_borders(tmpVideoPath, tmpProcessedVideoPath):
+                raise Exception()
+            if not s3_client.upload_file(tmpProcessedVideoPath, keyProcessedVideo):
+                raise Exception()
             
         file_client.delete_file(tmpProcessedVideoPath)
         file_client.delete_file(tmpVideoPath)
@@ -121,6 +127,60 @@ def convert_to_zoomed_916(input_video, output_video):
         map="0:a",
     ).run()
 
+    return True
+
+def convert_normal_916_with_borders(input_video, output_video, padding_color="black"):
+    probe = ffmpeg.probe(input_video)
+    video_stream = next(
+        (stream for stream in probe["streams"] if stream["codec_type"] == "video"), None
+    )
+    
+    if not video_stream:
+        raise ValueError("Erreur: aucun flux vidéo trouvé.")
+    
+    original_width = int(video_stream["width"])
+    original_height = int(video_stream["height"])
+    
+    target_ratio = 9 / 16
+    
+    new_height = int(original_width / target_ratio)
+    
+    pad_top = (new_height - original_height) // 2
+    pad_bottom = new_height - original_height - pad_top
+    
+    if original_width / original_height < target_ratio:
+        target_width = int(original_height * target_ratio)
+        
+        ffmpeg.input(input_video).filter("scale", target_width, -1).filter("pad", 
+                width=target_width, 
+                height=int(target_width / target_ratio), 
+                x=0, 
+                y="(oh-ih)/2",  # Centrer verticalement
+                color=padding_color).output(
+            output_video,
+            vcodec="libx264",
+            crf=23,
+            preset="fast",
+            acodec="aac", 
+            audio_bitrate="128k",
+            map="0:a"
+        ).run()
+    else:
+        ffmpeg.input(input_video).filter("pad", 
+                width=original_width, 
+                height=new_height, 
+                x=0, 
+                y=pad_top, 
+                color=padding_color).output(
+            output_video,
+            vcodec="libx264",
+            crf=23,
+            preset="fast",
+            acodec="aac", 
+            audio_bitrate="128k",
+            map="0:a"
+        ).run()
+    
     return True
 
 def create_processed_video(video: Video, name: str) -> Video:
