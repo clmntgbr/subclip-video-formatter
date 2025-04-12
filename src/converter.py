@@ -76,6 +76,7 @@ class ProtobufConverter:
         configuration.subtitleColor = clip_data["configuration"]["subtitleColor"]
         configuration.subtitleBold = clip_data["configuration"]["subtitleBold"]
         configuration.subtitleItalic = clip_data["configuration"]["subtitleItalic"]
+        configuration.privacyOptions = clip_data["configuration"]["privacyOptions"]
         configuration.subtitleUnderline = clip_data["configuration"][
             "subtitleUnderline"
         ]
