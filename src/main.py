@@ -1,5 +1,6 @@
 import os
 import re
+import tempfile
 import uuid
 import ffmpeg
 
@@ -40,6 +41,8 @@ celery.conf.update(
 
 @celery.task(name="tasks.process_message", queue=app.config["RMQ_QUEUE_READ"])
 def process_message(message):
+    file_client.delete_all_files_in_folder('/tmp')
+
     clip: Clip = ProtobufConverter.json_to_protobuf(message)
 
     try:
@@ -67,6 +70,12 @@ def process_message(message):
         
         if clip.configuration.format == VideoFormatStyle.Name(VideoFormatStyle.NORMAL_916_WITH_BORDERS):
             if not convert_normal_916_with_borders(tmpVideoPath, tmpProcessedVideoPath):
+                raise Exception()
+            if not s3_client.upload_file(tmpProcessedVideoPath, keyProcessedVideo):
+                raise Exception()
+        
+        if clip.configuration.format == VideoFormatStyle.Name(VideoFormatStyle.DUPLICATED_BLURRED_916):
+            if not convert_normal_916_with_blur(tmpVideoPath, tmpProcessedVideoPath):
                 raise Exception()
             if not s3_client.upload_file(tmpProcessedVideoPath, keyProcessedVideo):
                 raise Exception()
@@ -129,6 +138,157 @@ def convert_to_zoomed_916(input_video, output_video):
 
     return True
 
+def make_even(x):
+    return x if x % 2 == 0 else x - 1
+
+def convert_normal_916_with_blur(input_video, output_video, blur_strength=20):
+    temp_dir = tempfile.mkdtemp()
+    temp_blurred = os.path.join(temp_dir, "temp_blurred.mp4")
+    temp_original = os.path.join(temp_dir, "temp_original.mp4")
+    
+    try:
+        # Analyser la vidéo d'entrée
+        probe = ffmpeg.probe(input_video)
+        video_stream = next(
+            (stream for stream in probe["streams"] if stream["codec_type"] == "video"), None
+        )
+        
+        if not video_stream:
+            raise ValueError("Erreur: aucun flux vidéo trouvé.")
+        
+        # Récupérer les dimensions originales
+        original_width = int(video_stream["width"])
+        original_height = int(video_stream["height"])
+        
+        # Calculer les dimensions pour le format 9:16 de TikTok
+        target_ratio = 9 / 16
+        current_ratio = original_width / original_height
+        
+        if current_ratio > target_ratio:
+            # La vidéo est trop large
+            # Conserver la largeur et augmenter la hauteur
+            tiktok_height = int(original_width / target_ratio)
+            # S'assurer que la hauteur est divisible par 2
+            if tiktok_height % 2 != 0:
+                tiktok_height += 1
+            tiktok_width = original_width
+            
+            # Calculer les positions pour le centrage
+            y_pad = (tiktok_height - original_height) // 2
+            y_pad = y_pad if y_pad % 2 == 0 else y_pad + 1  # S'assurer que y_pad est pair
+            
+            # Créer une version floutée, étirée et recadrée pour l'arrière-plan
+            # Étape 1: Créer une version floutée pleine taille
+            (
+                ffmpeg
+                .input(input_video)
+                .filter('scale', tiktok_width, tiktok_height, force_original_aspect_ratio='increase')
+                .filter('crop', tiktok_width, tiktok_height)
+                .filter('boxblur', blur_strength, 5)
+                .output(temp_blurred, vcodec='libx264', crf=23, preset='fast')
+                .overwrite_output()
+                .run(quiet=True)
+            )
+            
+            # Étape 2: Préparer la vidéo originale
+            (
+                ffmpeg
+                .input(input_video)
+                .output(temp_original, vcodec='libx264', crf=23, preset='fast')
+                .overwrite_output()
+                .run(quiet=True)
+            )
+            
+            # Étape 3: Superposer la vidéo originale sur la version floutée
+            (
+                ffmpeg
+                .input(temp_blurred)
+                .overlay(
+                    ffmpeg.input(temp_original),
+                    x=0,
+                    y=y_pad
+                )
+                .output(
+                    output_video,
+                    vcodec='libx264',
+                    crf=23,
+                    preset='fast',
+                    acodec='aac',
+                    audio_bitrate='128k',
+                )
+                .overwrite_output()
+                .run()
+            )
+            
+        else:
+            # La vidéo est trop haute ou déjà au format 9:16
+            # Calculer la largeur pour respecter le ratio 9:16
+            tiktok_width = int(original_height * target_ratio)
+            # S'assurer que la largeur est divisible par 2
+            if tiktok_width % 2 != 0:
+                tiktok_width += 1
+            tiktok_height = original_height
+            
+            # Calculer les positions pour le centrage
+            x_pad = (tiktok_width - original_width) // 2
+            x_pad = x_pad if x_pad % 2 == 0 else x_pad + 1  # S'assurer que x_pad est pair
+            
+            # Créer une version floutée, étirée et recadrée pour l'arrière-plan
+            # Étape 1: Créer une version floutée pleine taille
+            (
+                ffmpeg
+                .input(input_video)
+                .filter('scale', tiktok_width, tiktok_height, force_original_aspect_ratio='increase')
+                .filter('crop', tiktok_width, tiktok_height)
+                .filter('boxblur', blur_strength, 5)
+                .output(temp_blurred, vcodec='libx264', crf=23, preset='fast')
+                .overwrite_output()
+                .run(quiet=True)
+            )
+            
+            # Étape 2: Préparer la vidéo originale
+            (
+                ffmpeg
+                .input(input_video)
+                .output(temp_original, vcodec='libx264', crf=23, preset='fast')
+                .overwrite_output()
+                .run(quiet=True)
+            )
+            
+            # Étape 3: Superposer la vidéo originale sur la version floutée
+            (
+                ffmpeg
+                .input(temp_blurred)
+                .overlay(
+                    ffmpeg.input(temp_original),
+                    x=x_pad,
+                    y=0
+                )
+                .output(
+                    output_video,
+                    vcodec='libx264',
+                    crf=23,
+                    preset='fast',
+                    acodec='aac',
+                    audio_bitrate='128k',
+                )
+                .overwrite_output()
+                .run()
+            )
+            
+    finally:
+        # Nettoyer les fichiers temporaires
+        try:
+            if os.path.exists(temp_blurred):
+                os.remove(temp_blurred)
+            if os.path.exists(temp_original):
+                os.remove(temp_original)
+            os.rmdir(temp_dir)
+        except:
+            pass
+    
+    return True
+
 def convert_normal_916_with_borders(input_video, output_video, padding_color="black"):
     probe = ffmpeg.probe(input_video)
     video_stream = next(
@@ -155,7 +315,7 @@ def convert_normal_916_with_borders(input_video, output_video, padding_color="bl
                 width=target_width, 
                 height=int(target_width / target_ratio), 
                 x=0, 
-                y="(oh-ih)/2",  # Centrer verticalement
+                y="(oh-ih)/2",
                 color=padding_color).output(
             output_video,
             vcodec="libx264",
