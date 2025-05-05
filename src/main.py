@@ -147,7 +147,6 @@ def convert_normal_916_with_blur(input_video, output_video, blur_strength=20):
     temp_original = os.path.join(temp_dir, "temp_original.mp4")
     
     try:
-        # Analyser la vidéo d'entrée
         probe = ffmpeg.probe(input_video)
         video_stream = next(
             (stream for stream in probe["streams"] if stream["codec_type"] == "video"), None
@@ -156,29 +155,19 @@ def convert_normal_916_with_blur(input_video, output_video, blur_strength=20):
         if not video_stream:
             raise ValueError("Erreur: aucun flux vidéo trouvé.")
         
-        # Récupérer les dimensions originales
         original_width = int(video_stream["width"])
         original_height = int(video_stream["height"])
-        
-        # Calculer les dimensions pour le format 9:16 de TikTok
         target_ratio = 9 / 16
         current_ratio = original_width / original_height
         
         if current_ratio > target_ratio:
-            # La vidéo est trop large
-            # Conserver la largeur et augmenter la hauteur
             tiktok_height = int(original_width / target_ratio)
-            # S'assurer que la hauteur est divisible par 2
             if tiktok_height % 2 != 0:
                 tiktok_height += 1
             tiktok_width = original_width
             
-            # Calculer les positions pour le centrage
             y_pad = (tiktok_height - original_height) // 2
-            y_pad = y_pad if y_pad % 2 == 0 else y_pad + 1  # S'assurer que y_pad est pair
-            
-            # Créer une version floutée, étirée et recadrée pour l'arrière-plan
-            # Étape 1: Créer une version floutée pleine taille
+            y_pad = y_pad if y_pad % 2 == 0 else y_pad + 1
             (
                 ffmpeg
                 .input(input_video)
@@ -190,7 +179,6 @@ def convert_normal_916_with_blur(input_video, output_video, blur_strength=20):
                 .run(quiet=True)
             )
             
-            # Étape 2: Préparer la vidéo originale
             (
                 ffmpeg
                 .input(input_video)
@@ -199,7 +187,6 @@ def convert_normal_916_with_blur(input_video, output_video, blur_strength=20):
                 .run(quiet=True)
             )
             
-            # Étape 3: Superposer la vidéo originale sur la version floutée
             (
                 ffmpeg
                 .input(temp_blurred)
@@ -221,20 +208,13 @@ def convert_normal_916_with_blur(input_video, output_video, blur_strength=20):
             )
             
         else:
-            # La vidéo est trop haute ou déjà au format 9:16
-            # Calculer la largeur pour respecter le ratio 9:16
             tiktok_width = int(original_height * target_ratio)
-            # S'assurer que la largeur est divisible par 2
             if tiktok_width % 2 != 0:
                 tiktok_width += 1
             tiktok_height = original_height
             
-            # Calculer les positions pour le centrage
             x_pad = (tiktok_width - original_width) // 2
-            x_pad = x_pad if x_pad % 2 == 0 else x_pad + 1  # S'assurer que x_pad est pair
-            
-            # Créer une version floutée, étirée et recadrée pour l'arrière-plan
-            # Étape 1: Créer une version floutée pleine taille
+            x_pad = x_pad if x_pad % 2 == 0 else x_pad + 1
             (
                 ffmpeg
                 .input(input_video)
@@ -246,7 +226,6 @@ def convert_normal_916_with_blur(input_video, output_video, blur_strength=20):
                 .run(quiet=True)
             )
             
-            # Étape 2: Préparer la vidéo originale
             (
                 ffmpeg
                 .input(input_video)
@@ -254,8 +233,6 @@ def convert_normal_916_with_blur(input_video, output_video, blur_strength=20):
                 .overwrite_output()
                 .run(quiet=True)
             )
-            
-            # Étape 3: Superposer la vidéo originale sur la version floutée
             (
                 ffmpeg
                 .input(temp_blurred)
@@ -277,7 +254,6 @@ def convert_normal_916_with_blur(input_video, output_video, blur_strength=20):
             )
             
     finally:
-        # Nettoyer les fichiers temporaires
         try:
             if os.path.exists(temp_blurred):
                 os.remove(temp_blurred)
